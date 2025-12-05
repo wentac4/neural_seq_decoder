@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 
 from .model import GRUDecoder
 from .dataset import SpeechDataset
+from .augmentations import SignedLog1pTransform
 
 
 def getDatasetLoaders(
@@ -33,8 +34,10 @@ def getDatasetLoaders(
             torch.stack(days),
         )
 
-    train_ds = SpeechDataset(loadedData["train"], transform=None)
-    test_ds = SpeechDataset(loadedData["test"])
+    feature_transform = SignedLog1pTransform()
+
+    train_ds = SpeechDataset(loadedData["train"], transform=feature_transform)
+    test_ds = SpeechDataset(loadedData["test"], transform=feature_transform)
 
     train_loader = DataLoader(
         train_ds,

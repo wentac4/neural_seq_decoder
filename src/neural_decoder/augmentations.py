@@ -4,6 +4,15 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+class SignedLog1pTransform(nn.Module):
+    # signed log(1 + |x|) transform to neural features.
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sign(x) * torch.log1p(torch.abs(x))
+
 
 class WhiteNoise(nn.Module):
     def __init__(self, std=0.1):
