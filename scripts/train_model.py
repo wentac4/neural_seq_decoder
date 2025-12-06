@@ -2,15 +2,15 @@
 modelName = 'speechBaseline4'
 
 args = {}
-args['outputDir'] = '/oak/stanford/groups/henderj/stfan/logs/speech_logs/' + modelName
-args['datasetPath'] = '/oak/stanford/groups/henderj/fwillett/speech/ptDecoder_ctc'
+args['outputDir'] = '/content/drive/MyDrive/ECEC243A/FinalProject/logs/' + modelName
+args['datasetPath'] = '/content/drive/MyDrive/ECEC243A/FinalProject/ptDecoder_ctc'
 args['seqLen'] = 150
 args['maxTimeSeriesLen'] = 1200
 args['batchSize'] = 64
 args['lrStart'] = 0.02
 args['lrEnd'] = 0.02
 args['nUnits'] = 1024
-args['nBatch'] = 10000 #3000
+args['nBatch'] = 30000 #3000
 args['nLayers'] = 5
 args['seed'] = 0
 args['nClasses'] = 40
@@ -21,8 +21,14 @@ args['constantOffsetSD'] = 0.2
 args['gaussianSmoothWidth'] = 2.0
 args['strideLen'] = 4
 args['kernelLen'] = 32
-args['bidirectional'] = True
+args['bidirectional'] = False
 args['l2_decay'] = 1e-5
+
+args['use_cr_ctc'] = True
+args['cr_loss_scale'] = 0.2
+args['use_spec_augment'] = True
+args['time_masking_factor'] = 2.5
+args['use_time_warp'] = False
 
 from neural_decoder.neural_decoder_trainer import trainModel
 

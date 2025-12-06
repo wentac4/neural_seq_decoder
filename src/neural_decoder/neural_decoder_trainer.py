@@ -8,9 +8,14 @@ import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
+
+from lhotse.dataset import SpecAugment
 
 from .model import GRUDecoder
 from .dataset import SpeechDataset
+
+from .utils import make_pad_mask, time_warp
 
 
 def getDatasetLoaders(
@@ -83,7 +88,39 @@ def trainModel(args):
         bidirectional=args["bidirectional"],
     ).to(device)
 
-    loss_ctc = torch.nn.CTCLoss(blank=0, reduction="mean", zero_infinity=True)
+    ################################################################################
+    use_cr_ctc = False
+    cr_loss_scale = 0.2
+    use_spec_augment = False
+    time_masking_factor = 1
+    use_time_warp = False
+
+    if "use_cr_ctc" in args:
+        use_cr_ctc = args["use_cr_ctc"]
+    if "cr_loss_scale" in args:
+        cr_loss_scale = args["cr_loss_scale"]
+    if "use_spec_augment" in args:
+        use_spec_augment = args["use_spec_augment"]
+    if "time_masking_factor" in args:
+        time_masking_factor = args["time_masking_factor"]
+    if "use_time_warp" in args:
+        use_time_warp = args["use_time_warp"]
+
+    if use_spec_augment:
+        # SpecAugment for CR-CTC, used with 2x-repeated batch
+        spec_augment = SpecAugment(
+            time_warp_factor=0,                         # Do time warping separately, if at all
+            num_frame_masks=10*time_masking_factor,             # default: 10
+            features_mask_size=27,
+            num_feature_masks=2,
+            frames_mask_size=100,
+            max_frames_mask_fraction=0.15*time_masking_factor,  # default: 0.15
+        ).to(device)
+    
+    # Use "none" so we can normalize ourselves
+    loss_ctc = torch.nn.CTCLoss(blank=0, reduction="none", zero_infinity=True)
+    ################################################################################
+
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args["lrStart"],
@@ -114,26 +151,98 @@ def trainModel(args):
             dayIdx.to(device),
         )
 
-        # Noise augmentation is faster on GPU
+        ################################################################################
+        B = X.shape[0]
+        X_base = X
+        
+        if use_time_warp:
+            X_base = time_warp(
+                X_base,
+                time_warp_factor=80,
+                supervision_segments=None,
+                seed=args["seed"]
+            )
+
         if args["whiteNoiseSD"] > 0:
-            X += torch.randn(X.shape, device=device) * args["whiteNoiseSD"]
+            X_base = X_base + torch.randn(X_base.shape, device=device) * args["whiteNoiseSD"]
 
         if args["constantOffsetSD"] > 0:
-            X += (
-                torch.randn([X.shape[0], 1, X.shape[2]], device=device)
+            X_base = X_base + (
+                torch.randn([X_base.shape[0], 1, X_base.shape[2]], device=device)
                 * args["constantOffsetSD"]
             )
 
-        # Compute prediction error
-        pred = model.forward(X, dayIdx)
+        ##################################################
+        #  CR-CTC TRAINING
+        ##################################################
+        if use_cr_ctc:
+            # Repeat batch 2×
+            X_rep = X_base.repeat(2, 1, 1)
+            X_len_rep = X_len.repeat(2)
+            y_rep = torch.cat([y, y], dim=0)
+            y_len_rep = torch.cat([y_len, y_len], dim=0)
+            dayIdx_rep = dayIdx.repeat(2)
 
-        loss = loss_ctc(
-            torch.permute(pred.log_softmax(2), [1, 0, 2]),
-            y,
-            ((X_len - model.kernelLen) / model.strideLen).to(torch.int32),
-            y_len,
-        )
-        loss = torch.sum(loss)
+            # Apply SpecAugment to 2B batch
+            if use_spec_augment:
+                X_rep = spec_augment(X_rep)
+
+            # Single forward pass on 2B batch
+            pred_rep = model.forward(X_rep, dayIdx_rep)
+            log_probs_rep = pred_rep.log_softmax(2)
+            out_lens_rep = ((X_len_rep - model.kernelLen) / model.strideLen).to(torch.int32)
+
+            # CTC loss
+            ctc_per_seq_2B = loss_ctc(
+                torch.permute(log_probs_rep, [1, 0, 2]),
+                y_rep,
+                out_lens_rep,
+                y_len_rep,
+            )
+
+            # Reshape
+            ctc_per_seq_2xB = ctc_per_seq_2B.view(2, B)
+            y_len_2xB = y_len_rep.view(2, B).to(ctc_per_seq_2xB.dtype)
+
+            # Convert to "mean": divide each per-seq loss by its own target length, then mean
+            ctc_loss_mean = (ctc_per_seq_2xB / y_len_2xB).mean()
+
+            # Symmetric KL for consistency regularization
+            exchanged_targets = torch.roll(log_probs_rep.detach(), B, dims=0)
+
+            cr_raw = F.kl_div(
+                input=log_probs_rep,
+                target=exchanged_targets,
+                reduction="none",
+                log_target=True,
+            )
+
+            # Mask invalid frames
+            length_mask = make_pad_mask(out_lens_rep, max_len=cr_raw.size(1)).unsqueeze(-1)
+            cr_raw = cr_raw.masked_fill(length_mask, 0.0)
+
+            cr_sum = cr_raw.sum()
+            num_valid = (~length_mask).sum()
+            cr_loss_mean = cr_sum / num_valid
+            cr_loss_mean = cr_loss_mean * 0.5
+
+            # Final CR-CTC loss
+            loss = ctc_loss_mean + cr_loss_scale * cr_loss_mean
+
+        ##################################################
+        #  VANILLA CTC TRAINING (if use_cr_ctc = False)
+        ##################################################
+        else:
+            pred = model.forward(X_base, dayIdx)
+
+            ctc_per_seq = loss_ctc(
+                torch.permute(pred.log_softmax(2), [1, 0, 2]),
+                y,
+                ((X_len - model.kernelLen) / model.strideLen).to(torch.int32),
+                y_len,
+            )
+            loss = (ctc_per_seq / y_len.to(ctc_per_seq.dtype)).mean()
+        ################################################################################
 
         # Backpropagation
         optimizer.zero_grad()
@@ -160,13 +269,15 @@ def trainModel(args):
                     )
 
                     pred = model.forward(X, testDayIdx)
-                    loss = loss_ctc(
+                    ################################################################################
+                    ctc_per_seq = loss_ctc(
                         torch.permute(pred.log_softmax(2), [1, 0, 2]),
                         y,
                         ((X_len - model.kernelLen) / model.strideLen).to(torch.int32),
                         y_len,
                     )
-                    loss = torch.sum(loss)
+                    loss = (ctc_per_seq / y_len.to(ctc_per_seq.dtype)).mean()
+                    ################################################################################
                     allLoss.append(loss.cpu().detach().numpy())
 
                     adjustedLens = ((X_len - model.kernelLen) / model.strideLen).to(
