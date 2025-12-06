@@ -164,20 +164,30 @@ if __name__ == "__main__":
     BASE_DIR = "/content/drive/MyDrive/ECEC243A/FinalProject/outputs"
     OLD_BASE_DIR = "/content/drive/MyDrive/ECEC243A/FinalProject/logs"
     
-    # ===== DEFAULT: Plot previous 5 experiments =====
-    # List of previous experiments to plot (in order)
-    previous_experiments = [
+    # ===== DEFAULT: Plot ALL experiments (previous + new) =====
+    # List of all experiments to plot (in order: previous first, then new)
+    all_experiments_list = [
+        # Previous experiments
         'baseline',
         'label_smooth_0.05',
         'label_smooth_0.1',
         'layer_norm',
-        'combined_0.1_norm'
+        'combined_0.1_norm',
+        # New architecture experiments
+        'post_gru_stack',
+        'progressive_smoothing',
+        'layer_norm_pre',
+        'layer_norm_dual',
+        'progressive_post_gru_stack',
+        'pre_norm_post_gru_stack',
+        'dual_norm_post_gru_stack',
+        'progressive_dual_norm_post_gru_stack'
     ]
     
-    print("Looking for previous experiments...")
+    print("Looking for all experiments...")
     found_experiments = []
     
-    for exp_name in previous_experiments:
+    for exp_name in all_experiments_list:
         exp_dir = os.path.join(BASE_DIR, exp_name)
         stats_path = os.path.join(exp_dir, 'trainingStats')
         if os.path.exists(stats_path):
@@ -189,28 +199,28 @@ if __name__ == "__main__":
     if found_experiments:
         exp_dirs, exp_names = zip(*found_experiments)
         print(f"\nPlotting {len(exp_dirs)} experiments: {exp_names}")
-        plot_multiple_experiments(list(exp_dirs), exp_names=list(exp_names), max_experiments=5)
+        plot_multiple_experiments(list(exp_dirs), exp_names=list(exp_names), max_experiments=len(found_experiments))
     else:
-        print("\nNo previous experiments found! Trying auto-detect...")
+        print("\nNo experiments found! Trying auto-detect...")
         
         # Fallback: Auto-detect all available experiments
         all_experiments = []
         
         # Check new outputs directory
         if os.path.exists(BASE_DIR):
-            new_exps = [d for d in os.listdir(BASE_DIR) 
+            auto_exps = [d for d in os.listdir(BASE_DIR) 
                        if os.path.isdir(os.path.join(BASE_DIR, d)) and 
                        os.path.exists(os.path.join(BASE_DIR, d, 'trainingStats'))]
-            for exp in new_exps:
+            for exp in auto_exps:
                 all_experiments.append((os.path.join(BASE_DIR, exp), exp))
-            print(f"Found {len(new_exps)} experiments in {BASE_DIR}: {new_exps}")
+            print(f"Found {len(auto_exps)} experiments in {BASE_DIR}: {auto_exps}")
         
         if all_experiments:
             # Sort by name for consistent ordering
             all_experiments.sort(key=lambda x: x[1])
-            exp_dirs, exp_names = zip(*all_experiments[:5])  # Take first 5
+            exp_dirs, exp_names = zip(*all_experiments)
             print(f"\nPlotting {len(exp_dirs)} experiments: {exp_names}")
-            plot_multiple_experiments(list(exp_dirs), exp_names=list(exp_names), max_experiments=5)
+            plot_multiple_experiments(list(exp_dirs), exp_names=list(exp_names), max_experiments=len(all_experiments))
         else:
             print("No experiments found!")
             print(f"Checked: {BASE_DIR}")

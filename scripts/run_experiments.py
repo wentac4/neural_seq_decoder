@@ -78,37 +78,42 @@ experiments = [
         "post_gru_stack_dropout": 0.1
     },
     
-    # ===== PREVIOUS EXPERIMENTS (Commented out - run separately) =====
-    # {
-    #     "name": "baseline",
-    #     "label_smoothing": 0.0,
-    #     "use_layer_norm": False,
-    #     "layer_norm_position": "none"
-    # },
-    # {
-    #     "name": "label_smooth_0.05",
-    #     "label_smoothing": 0.05,
-    #     "use_layer_norm": False,
-    #     "layer_norm_position": "none"
-    # },
-    # {
-    #     "name": "label_smooth_0.1",
-    #     "label_smoothing": 0.1,
-    #     "use_layer_norm": False,
-    #     "layer_norm_position": "none"
-    # },
-    # {
-    #     "name": "layer_norm",
-    #     "label_smoothing": 0.0,
-    #     "use_layer_norm": True,
-    #     "layer_norm_position": "post"  # This is the default post-norm
-    # },
-    # {
-    #     "name": "combined_0.1_norm",
-    #     "label_smoothing": 0.1,
-    #     "use_layer_norm": True,
-    #     "layer_norm_position": "post"  # 0.1 smoothing + post-norm
-    # },
+    # ===== PREVIOUS EXPERIMENTS =====
+    {
+        "name": "baseline",
+        "label_smoothing": 0.0,
+        "use_layer_norm": False,
+        "layer_norm_position": "none",
+        "use_post_gru_stack": False
+    },
+    {
+        "name": "label_smooth_0.05",
+        "label_smoothing": 0.05,
+        "use_layer_norm": False,
+        "layer_norm_position": "none",
+        "use_post_gru_stack": False
+    },
+    {
+        "name": "label_smooth_0.1",
+        "label_smoothing": 0.1,
+        "use_layer_norm": False,
+        "layer_norm_position": "none",
+        "use_post_gru_stack": False
+    },
+    {
+        "name": "layer_norm",
+        "label_smoothing": 0.0,
+        "use_layer_norm": True,
+        "layer_norm_position": "post",  # This is the default post-norm
+        "use_post_gru_stack": False
+    },
+    {
+        "name": "combined_0.1_norm",
+        "label_smoothing": 0.1,
+        "use_layer_norm": True,
+        "layer_norm_position": "post",  # 0.1 smoothing + post-norm
+        "use_post_gru_stack": False
+    },
 ]
 
 # Base config (from config.yaml defaults)
